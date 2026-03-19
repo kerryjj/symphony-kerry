@@ -22,7 +22,14 @@
       "Bash(codex --help)",
       "Bash(codex --version)",
       "Bash(codex app-server:*)",
-      "Bash(codex proto:*)"
+      "Bash(codex proto:*)",
+      "Bash(find /Users/kerry/code/automation/symphony -path *repo* -type f \\\\\\(-name *.exs -o -name *.ex \\\\\\))",
+      "Bash(cat /Users/kerry/code/automation/symphony/*.sh)",
+      "Bash(python3 -c \"import sys,json; s=json.load\\(sys.stdin\\); [print\\(k\\) for k in s.get\\(''''definitions'''', s.get\\(''''$defs'''', {}\\)\\).keys\\(\\)]\")",
+      "Bash(find /Users/kerry/code/automation/symphony -type f \\\\\\(-name *.sh -o -name Makefile -o -name *.rake \\\\\\))",
+      "Bash(head -20 /Users/kerry/code/automation/symphony/elixir/log/traces/*.jsonl)",
+      "Bash(kiex list:*)",
+      "Bash(source \"$HOME/.kiex/elixirs/elixir-1.19.5.env\")"
     ]
   }
 }

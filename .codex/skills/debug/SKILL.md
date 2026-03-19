@@ -110,6 +110,52 @@ For one specific session investigation, keep the trace narrow:
 Always pair session findings with `issue_identifier`/`issue_id` to avoid mixing
 concurrent runs.
 
+## Trace Files (Full Message History)
+
+Codex session traces live at `log/traces/{issue_identifier}.jsonl` alongside the
+runtime logs. Each line is a JSONL entry with a nested `raw` field that is itself a
+JSON string; the useful data is buried inside `params.item`. Use the Mix task to read
+them rather than hand-parsing.
+
+### Primary: `mix trace.show`
+
+Run from the `elixir/` directory (or pass `--dir` to point at a non-default location):
+
+```bash
+# Full trace for an issue
+mix trace.show GRE-8
+
+# Trace from a specific workspace directory
+mix trace.show GRE-8 --dir ~/code/greet/greet-88218/log/traces
+
+# Only command executions
+mix trace.show GRE-8 --filter commands
+
+# Only agent messages
+mix trace.show GRE-8 --filter agent
+
+# Only errors (failed commands + turn_failed/cancelled)
+mix trace.show GRE-8 --filter errors
+
+# Last 20 events only
+mix trace.show GRE-8 --tail 20
+```
+
+### Fallback: raw `jq` one-liners
+
+Use these when `mix` is not available in the environment:
+
+```bash
+# All agent messages
+jq -r 'select(.raw != null) | .raw | fromjson | select(.params.item.type == "agentMessage") | .params.item.text' log/traces/GRE-8.jsonl
+
+# All commands + output
+jq -r 'select(.raw != null) | .raw | fromjson | select(.params.item.type == "commandExecution") | "\(.params.item.status) \(.params.item.command)\n\(.params.item.aggregatedOutput // "")"' log/traces/GRE-8.jsonl
+
+# Errors only (failed commands and turn_failed events)
+jq -r 'select(.event == "turn_failed" or (.raw != null and (.raw | fromjson | .params.item.status? == "failed")))' log/traces/GRE-8.jsonl
+```
+
 ## Notes
 
 - Prefer `rg` over `grep` for speed on large logs.

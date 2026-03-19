@@ -9,7 +9,7 @@ defmodule SymphonyElixir.AgentRunner do
 
   require Logger
   alias SymphonyElixir.Claude.Runner, as: ClaudeRunner
-  alias SymphonyElixir.Codex.AppServer
+  alias SymphonyElixir.Codex.{AppServer, TraceLogger}
   alias SymphonyElixir.IssueTagParser
   alias SymphonyElixir.{Config, Linear.Issue, PromptBuilder, Tracker, Workspace}
 
@@ -155,9 +155,14 @@ defmodule SymphonyElixir.AgentRunner do
 
   defp codex_message_handler(recipient, issue) do
     fn message ->
+      TraceLogger.log(message, issue_identifier(issue))
       send_codex_update(recipient, issue, message)
     end
   end
+
+  defp issue_identifier(%Issue{identifier: id}) when is_binary(id), do: id
+  defp issue_identifier(%Issue{id: id}) when is_binary(id), do: id
+  defp issue_identifier(_), do: "unknown"
 
   defp send_codex_update(recipient, %Issue{id: issue_id}, message)
        when is_binary(issue_id) and is_pid(recipient) do

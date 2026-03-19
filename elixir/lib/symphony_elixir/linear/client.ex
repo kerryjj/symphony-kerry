@@ -121,7 +121,7 @@ defmodule SymphonyElixir.Linear.Client do
   """
 
   @create_label_mutation """
-  mutation SymphonyCreateLabel($teamId: ID!, $name: String!, $color: String!) {
+  mutation SymphonyCreateLabel($teamId: String!, $name: String!, $color: String!) {
     issueLabelCreate(input: { teamId: $teamId, name: $name, color: $color }) {
       issueLabel { id name }
       success
