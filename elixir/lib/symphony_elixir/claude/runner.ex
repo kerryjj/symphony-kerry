@@ -20,14 +20,19 @@ defmodule SymphonyElixir.Claude.Runner do
     timeout_ms = Keyword.get(opts, :timeout_ms, @default_timeout_ms)
 
     full_cmd = "cd #{shell_escape(workspace)} && #{command} -p #{shell_escape(prompt)}"
-    port = Port.open({:spawn, "bash -lc #{shell_escape(full_cmd)}"}, [:binary, :exit_status, line: 65536])
+    port = Port.open({:spawn, "bash -lc #{shell_escape(full_cmd)}"}, [:binary, :exit_status, line: 1_048_576])
 
-    receive_loop(port, on_message, timeout_ms)
+    receive_loop(port, on_message, timeout_ms, "")
   end
 
-  defp receive_loop(port, on_message, timeout_ms) do
+  defp receive_loop(port, on_message, timeout_ms, pending) do
     receive do
-      {^port, {:data, {:eol, line}}} ->
+      {^port, {:data, {:noeol, chunk}}} ->
+        receive_loop(port, on_message, timeout_ms, pending <> chunk)
+
+      {^port, {:data, {:eol, chunk}}} ->
+        line = pending <> chunk
+
         case Jason.decode(line) do
           {:ok, %{"type" => "result", "subtype" => "success"} = event} ->
             on_message.(event)
@@ -41,11 +46,11 @@ defmodule SymphonyElixir.Claude.Runner do
 
           {:ok, event} ->
             on_message.(event)
-            receive_loop(port, on_message, timeout_ms)
+            receive_loop(port, on_message, timeout_ms, "")
 
           {:error, _} ->
             Logger.debug("Claude.Runner non-JSON line: #{inspect(line)}")
-            receive_loop(port, on_message, timeout_ms)
+            receive_loop(port, on_message, timeout_ms, "")
         end
 
       {^port, {:exit_status, 0}} ->
