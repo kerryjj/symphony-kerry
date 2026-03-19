@@ -103,6 +103,40 @@ defmodule SymphonyElixir.Linear.Client do
   }
   """
 
+  @fetch_issue_labels_query """
+  query SymphonyFetchIssueLabels($id: String!) {
+    issue(id: $id) {
+      team { id }
+      labels { nodes { id } }
+    }
+  }
+  """
+
+  @fetch_team_labels_query """
+  query SymphonyFetchTeamLabels($teamId: String!) {
+    issueLabels(filter: { team: { id: { eq: $teamId } } }) {
+      nodes { id name }
+    }
+  }
+  """
+
+  @create_label_mutation """
+  mutation SymphonyCreateLabel($teamId: String!, $name: String!, $color: String!) {
+    issueLabelCreate(input: { teamId: $teamId, name: $name, color: $color }) {
+      issueLabel { id name }
+      success
+    }
+  }
+  """
+
+  @update_issue_labels_mutation """
+  mutation SymphonyUpdateIssueLabels($id: String!, $labelIds: [String!]!) {
+    issueUpdate(id: $id, input: { labelIds: $labelIds }) {
+      success
+    }
+  }
+  """
+
   @spec fetch_candidate_issues() :: {:ok, [Issue.t()]} | {:error, term()}
   def fetch_candidate_issues do
     tracker = Config.settings!().tracker
@@ -157,6 +191,26 @@ defmodule SymphonyElixir.Linear.Client do
         with {:ok, assignee_filter} <- routing_assignee_filter() do
           do_fetch_issue_states(ids, assignee_filter)
         end
+    end
+  end
+
+  @spec add_label_to_issue(String.t(), String.t()) :: :ok | {:error, term()}
+  def add_label_to_issue(issue_id, label_name)
+      when is_binary(issue_id) and is_binary(label_name) do
+    with {:ok, %{"team" => %{"id" => team_id}, "labels" => %{"nodes" => label_nodes}}} <-
+           fetch_issue_label_info(issue_id),
+         {:ok, label_id} <- ensure_label_exists(team_id, label_name),
+         current_ids = Enum.map(label_nodes, & &1["id"]),
+         false <- label_id in current_ids,
+         {:ok, _} <-
+           graphql(@update_issue_labels_mutation, %{
+             "id" => issue_id,
+             "labelIds" => Enum.uniq([label_id | current_ids])
+           }) do
+      :ok
+    else
+      true -> :ok
+      {:error, reason} -> {:error, reason}
     end
   end
 
@@ -444,6 +498,35 @@ defmodule SymphonyElixir.Linear.Client do
 
   defp next_page_cursor(%{has_next_page: true}), do: {:error, :linear_missing_end_cursor}
   defp next_page_cursor(_), do: :done
+
+  defp fetch_issue_label_info(issue_id) do
+    case graphql(@fetch_issue_labels_query, %{"id" => issue_id}) do
+      {:ok, %{"data" => %{"issue" => issue}}} when is_map(issue) -> {:ok, issue}
+      {:ok, _} -> {:error, :issue_not_found}
+      error -> error
+    end
+  end
+
+  defp ensure_label_exists(team_id, label_name) do
+    with {:ok, %{"data" => %{"issueLabels" => %{"nodes" => labels}}}} <-
+           graphql(@fetch_team_labels_query, %{"teamId" => team_id}) do
+      case Enum.find(labels, &(String.downcase(&1["name"]) == String.downcase(label_name))) do
+        %{"id" => id} ->
+          {:ok, id}
+
+        nil ->
+          create_label(team_id, label_name)
+      end
+    end
+  end
+
+  defp create_label(team_id, label_name) do
+    case graphql(@create_label_mutation, %{"teamId" => team_id, "name" => label_name, "color" => "#6366f1"}) do
+      {:ok, %{"data" => %{"issueLabelCreate" => %{"issueLabel" => %{"id" => id}}}}} -> {:ok, id}
+      {:ok, _} -> {:error, :label_create_failed}
+      error -> error
+    end
+  end
 
   defp normalize_issue(issue, assignee_filter) when is_map(issue) do
     assignee = issue["assignee"]

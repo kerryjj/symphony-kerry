@@ -1,10 +1,16 @@
 defmodule SymphonyElixir.AgentRunner do
   @moduledoc """
-  Executes a single Linear issue in its workspace with Codex.
+  Executes a single Linear issue in its workspace using the configured agent backend.
+
+  The backend (Codex or Claude) is resolved from the `[agent: ...]` tag in the
+  ticket description, falling back to `agent.default_backend` in WORKFLOW.md config.
+  Both backends receive the identical rendered WORKFLOW.md prompt.
   """
 
   require Logger
+  alias SymphonyElixir.Claude.Runner, as: ClaudeRunner
   alias SymphonyElixir.Codex.AppServer
+  alias SymphonyElixir.IssueTagParser
   alias SymphonyElixir.{Config, Linear.Issue, PromptBuilder, Tracker, Workspace}
 
   @type worker_host :: String.t() | nil
@@ -51,7 +57,10 @@ defmodule SymphonyElixir.AgentRunner do
 
         try do
           with :ok <- Workspace.run_before_run_hook(workspace, issue, worker_host) do
-            run_codex_turns(workspace, issue, codex_update_recipient, opts, worker_host)
+            backend = resolve_backend(issue)
+            result = dispatch_run(backend, workspace, issue, codex_update_recipient, opts, worker_host)
+            add_backend_label(issue, backend)
+            result
           end
         after
           Workspace.run_after_run_hook(workspace, issue, worker_host)
@@ -61,6 +70,88 @@ defmodule SymphonyElixir.AgentRunner do
         {:error, reason}
     end
   end
+
+  defp resolve_backend(issue) do
+    case IssueTagParser.parse(issue.description).backend do
+      nil -> config_default_backend()
+      backend -> backend
+    end
+  end
+
+  defp config_default_backend do
+    case Config.settings!().agent.default_backend do
+      "claude" -> :claude
+      _ -> :codex
+    end
+  end
+
+  defp dispatch_run(:codex, workspace, issue, codex_update_recipient, opts, worker_host) do
+    run_codex_turns(workspace, issue, codex_update_recipient, opts, worker_host)
+  end
+
+  defp dispatch_run(:claude, workspace, issue, codex_update_recipient, opts, _worker_host) do
+    run_claude_turns(workspace, issue, codex_update_recipient, opts)
+  end
+
+  defp run_claude_turns(workspace, issue, codex_update_recipient, opts) do
+    max_turns = Keyword.get(opts, :max_turns, Config.settings!().agent.max_turns)
+    issue_state_fetcher = Keyword.get(opts, :issue_state_fetcher, &Tracker.fetch_issue_states_by_ids/1)
+    command = Config.settings!().claude.command
+
+    do_run_claude_turns(workspace, issue, codex_update_recipient, opts, issue_state_fetcher, command, 1, max_turns)
+  end
+
+  defp do_run_claude_turns(workspace, issue, codex_update_recipient, opts, issue_state_fetcher, command, turn_number, max_turns) do
+    prompt = build_claude_turn_prompt(issue, opts, turn_number, max_turns)
+
+    with :ok <-
+           ClaudeRunner.run_turn(workspace, prompt,
+             command: command,
+             on_message: codex_message_handler(codex_update_recipient, issue)
+           ) do
+      Logger.info("Completed Claude turn for #{issue_context(issue)} turn=#{turn_number}/#{max_turns}")
+
+      case continue_with_issue?(issue, issue_state_fetcher) do
+        {:continue, refreshed_issue} when turn_number < max_turns ->
+          do_run_claude_turns(workspace, refreshed_issue, codex_update_recipient, opts, issue_state_fetcher, command, turn_number + 1, max_turns)
+
+        {:continue, _} ->
+          :ok
+
+        {:done, _} ->
+          :ok
+
+        {:error, reason} ->
+          {:error, reason}
+      end
+    end
+  end
+
+  defp build_claude_turn_prompt(issue, opts, 1, _max_turns), do: PromptBuilder.build_prompt(issue, opts)
+
+  defp build_claude_turn_prompt(_issue, _opts, turn_number, max_turns) do
+    """
+    Continuation guidance:
+
+    - The previous Claude turn completed normally, but the Linear issue is still in an active state.
+    - This is continuation turn ##{turn_number} of #{max_turns} for the current agent run.
+    - Resume from the current workspace and workpad state instead of restarting from scratch.
+    """
+  end
+
+  defp add_backend_label(%Issue{id: issue_id} = issue, backend) when is_binary(issue_id) do
+    label_name = Atom.to_string(backend)
+
+    case Tracker.add_label_to_issue(issue_id, label_name) do
+      :ok ->
+        :ok
+
+      {:error, reason} ->
+        Logger.warning("Failed to add label #{label_name} to #{issue_context(issue)}: #{inspect(reason)}")
+    end
+  end
+
+  defp add_backend_label(_issue, _backend), do: :ok
 
   defp codex_message_handler(recipient, issue) do
     fn message ->

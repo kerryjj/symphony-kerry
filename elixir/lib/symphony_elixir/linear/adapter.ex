@@ -73,6 +73,12 @@ defmodule SymphonyElixir.Linear.Adapter do
     end
   end
 
+  @spec add_label_to_issue(String.t(), String.t()) :: :ok | {:error, term()}
+  def add_label_to_issue(issue_id, label_name)
+      when is_binary(issue_id) and is_binary(label_name) do
+    Client.add_label_to_issue(issue_id, label_name)
+  end
+
   defp client_module do
     Application.get_env(:symphony_elixir, :linear_client_module, Client)
   end

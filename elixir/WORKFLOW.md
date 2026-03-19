@@ -28,6 +28,7 @@ hooks:
 agent:
   max_concurrent_agents: 10
   max_turns: 20
+  # default_backend: codex  # "codex" (default) or "claude" — override per-ticket with [agent: <value>] in description
 codex:
   command: codex --config shell_environment_policy.inherit=all --config model_reasoning_effort=xhigh --model gpt-5.3-codex app-server
   approval_policy: never
@@ -199,7 +200,24 @@ Use this only when completion is blocked by missing required tools or missing au
 2.  If current issue state is `Todo`, move it to `In Progress`; otherwise leave the current state unchanged.
 3.  Load the existing workpad comment and treat it as the active execution checklist.
     - Edit it liberally whenever reality changes (scope, risks, validation approach, discovered tasks).
-4.  Implement against the hierarchical TODOs and keep the comment current:
+4.  Use a skill to handle the implementation phase. Determine the skill as follows:
+    1. If the ticket description contains `[skill: <name>]`, use that skill.
+    2. Otherwise, default to `/lfg`.
+
+    Then determine the input:
+    - If the ticket description contains `[plan: <path>]`, pass the content of that file
+      as the skill argument (path is relative to the workspace root).
+    - Otherwise, pass the ticket title and description as the skill argument.
+
+    Examples:
+    - No tags → `/lfg <title>: <description>`
+    - `[skill: ce:work]` + `[plan: docs/plans/SYM-42-plan.md]` → `/ce:work docs/plans/SYM-42-plan.md`
+    - `[skill: feature-dev]` → `/feature-dev <title>: <description>`
+
+    After the skill completes, resume this workflow: update the workpad, verify the PR exists,
+    run the PR feedback sweep, and move to `Human Review` when the completion bar is met.
+
+5.  Implement against the hierarchical TODOs and keep the comment current:
     - Check off completed items.
     - Add newly discovered items in the appropriate section.
     - Keep parent/child structure intact as scope evolves.
