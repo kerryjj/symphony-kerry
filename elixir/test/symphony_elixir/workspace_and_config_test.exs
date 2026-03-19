@@ -940,6 +940,45 @@ defmodule SymphonyElixir.WorkspaceAndConfigTest do
     assert config.workspace.root == "env:#{workspace_env_var}"
   end
 
+  test "config resolves $VAR references for project_slug and endpoint" do
+    project_slug_env_var = "SYMP_PROJECT_SLUG_#{System.unique_integer([:positive])}"
+    endpoint_env_var = "SYMP_ENDPOINT_#{System.unique_integer([:positive])}"
+    project_slug = "my-project-abc123"
+    endpoint = "https://api.linear.app/graphql"
+
+    previous_project_slug = System.get_env(project_slug_env_var)
+    previous_endpoint = System.get_env(endpoint_env_var)
+
+    System.put_env(project_slug_env_var, project_slug)
+    System.put_env(endpoint_env_var, endpoint)
+
+    on_exit(fn ->
+      restore_env(project_slug_env_var, previous_project_slug)
+      restore_env(endpoint_env_var, previous_endpoint)
+    end)
+
+    assert {:ok, settings} =
+             Schema.parse(%{
+               tracker: %{
+                 project_slug: "$#{project_slug_env_var}",
+                 endpoint: "$#{endpoint_env_var}"
+               }
+             })
+
+    assert settings.tracker.project_slug == project_slug
+    assert settings.tracker.endpoint == endpoint
+  end
+
+  test "config falls back to LINEAR_PROJECT_SLUG env var when project_slug is nil" do
+    previous_project_slug = System.get_env("LINEAR_PROJECT_SLUG")
+    System.put_env("LINEAR_PROJECT_SLUG", "fallback-slug")
+
+    on_exit(fn -> restore_env("LINEAR_PROJECT_SLUG", previous_project_slug) end)
+
+    assert {:ok, settings} = Schema.parse(%{tracker: %{}})
+    assert settings.tracker.project_slug == "fallback-slug"
+  end
+
   test "config supports per-state max concurrent agent overrides" do
     workflow = """
     ---

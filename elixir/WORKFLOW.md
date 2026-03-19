@@ -1,7 +1,7 @@
 ---
 tracker:
   kind: linear
-  project_slug: "symphony-0c79b11b75ea"
+  project_slug: $LINEAR_PROJECT_SLUG
   active_states:
     - Todo
     - In Progress
@@ -19,12 +19,14 @@ workspace:
   root: ~/code/symphony-workspaces
 hooks:
   after_create: |
-    git clone --depth 1 https://github.com/openai/symphony .
-    if command -v mise >/dev/null 2>&1; then
-      cd elixir && mise trust && mise exec -- mix deps.get
+    git clone --depth 1 "${PROJECT_REPO}" .
+    if [ -f .symphony/hooks/setup.sh ]; then
+      sh .symphony/hooks/setup.sh
     fi
   before_remove: |
-    cd elixir && mise exec -- mix workspace.before_remove
+    if [ -f .symphony/hooks/teardown.sh ]; then
+      sh .symphony/hooks/teardown.sh
+    fi
 agent:
   max_concurrent_agents: 10
   max_turns: 20
