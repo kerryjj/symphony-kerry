@@ -1,7 +1,17 @@
 {
   "permissions": {
     "allow": [
-      "Bash(git remote:*)"
+      "Bash(git remote:*)",
+      "Skill(ralph-loop:ralph-loop)",
+      "Bash(git checkout:*)",
+      "Bash(mix compile:*)",
+      "Bash(mise exec:*)",
+      "Bash(mise trust:*)",
+      "Bash(mix local.hex --force)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(git push:*)",
+      "Bash(gh repo:*)"
     ]
   }
 }
