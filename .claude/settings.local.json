@@ -11,7 +11,9 @@
       "Bash(git add:*)",
       "Bash(git commit:*)",
       "Bash(git push:*)",
-      "Bash(gh repo:*)"
+      "Bash(gh repo:*)",
+      "Bash(mix test:*)",
+      "Skill(commit-commands:commit)"
     ]
   }
 }
