@@ -29,7 +29,8 @@
       "Bash(find /Users/kerry/code/automation/symphony -type f \\\\\\(-name *.sh -o -name Makefile -o -name *.rake \\\\\\))",
       "Bash(head -20 /Users/kerry/code/automation/symphony/elixir/log/traces/*.jsonl)",
       "Bash(kiex list:*)",
-      "Bash(source \"$HOME/.kiex/elixirs/elixir-1.19.5.env\")"
+      "Bash(source \"$HOME/.kiex/elixirs/elixir-1.19.5.env\")",
+      "Bash(mix trace.show:*)"
     ]
   }
 }
