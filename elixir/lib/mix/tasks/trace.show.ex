@@ -13,12 +13,16 @@ defmodule Mix.Tasks.Trace.Show do
       mix trace.show GRE-8 --filter commands
       mix trace.show GRE-8 --filter errors
       mix trace.show GRE-8 --tail 20
+      mix trace.show GRE-8 --follow
+      mix trace.show GRE-8 --notifications
 
   Options:
 
-    --dir DIR       Trace directory (default: log/traces)
-    --filter TYPE   Filter events: all (default), commands, agent, errors
-    --tail N        Show last N events only
+    --dir DIR         Trace directory (default: log/traces)
+    --filter TYPE     Filter events: all (default), commands, agent, errors
+    --tail N          Show last N events only
+    --follow          Print existing events then stream new ones as they arrive (Ctrl+C to stop)
+    --notifications   Include notification events (hidden by default)
   """
 
   alias SymphonyElixir.Codex.TraceLogger
@@ -27,7 +31,7 @@ defmodule Mix.Tasks.Trace.Show do
   def run(args) do
     {opts, argv, invalid} =
       OptionParser.parse(args,
-        strict: [dir: :string, filter: :string, tail: :integer, help: :boolean],
+        strict: [dir: :string, filter: :string, tail: :integer, help: :boolean, notifications: :boolean, follow: :boolean],
         aliases: [h: :help]
       )
 
@@ -66,10 +70,14 @@ defmodule Mix.Tasks.Trace.Show do
       Mix.raise("Invalid --filter value: #{inspect(filter)}. Must be one of: all, commands, agent, errors")
     end
 
+    show_notifications = opts[:notifications] || false
+    follow = opts[:follow] || false
+
     events =
       path
       |> File.stream!()
       |> Enum.flat_map(&parse_line/1)
+      |> Enum.reject(&(not show_notifications and notification_event?(&1)))
       |> Enum.filter(&matches_filter?(&1, filter))
 
     events =
@@ -79,6 +87,32 @@ defmodule Mix.Tasks.Trace.Show do
       end
 
     Enum.each(events, &print_event/1)
+
+    if follow do
+      {:ok, file} = File.open(path, [:read])
+      :file.position(file, :eof)
+      follow_loop(file, filter, show_notifications)
+    end
+  end
+
+  defp follow_loop(file, filter, show_notifications) do
+    case IO.read(file, :line) do
+      :eof ->
+        Process.sleep(200)
+        follow_loop(file, filter, show_notifications)
+
+      {:error, _} ->
+        :ok
+
+      line ->
+        line
+        |> parse_line()
+        |> Enum.reject(&(not show_notifications and notification_event?(&1)))
+        |> Enum.filter(&matches_filter?(&1, filter))
+        |> Enum.each(&print_event/1)
+
+        follow_loop(file, filter, show_notifications)
+    end
   end
 
   defp parse_line(line) do
@@ -122,6 +156,10 @@ defmodule Mix.Tasks.Trace.Show do
 
   defp item_type(nil), do: nil
   defp item_type(item), do: item["type"]
+
+  defp notification_event?(%{item: nil, event: "notification"}), do: true
+  defp notification_event?(%{item: %{"type" => "reasoning"}}), do: true
+  defp notification_event?(_), do: false
 
   defp print_event(%{item: nil, event: event, timestamp: ts}) when event != nil do
     Mix.shell().info("[EVENT #{event}]#{format_ts(ts)}")
